@@ -18,7 +18,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - name: 检出代码
-      uses: actions/checkout@v4
+      uses: actions/checkout@v5
 
     - name: 设置Flutter
       uses: subosito/flutter-action@v2
@@ -65,7 +65,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - name: 检出代码
-      uses: actions/checkout@v4
+      uses: actions/checkout@v5
 
     - name: 设置Flutter
       uses: subosito/flutter-action@v2
@@ -112,7 +112,7 @@ jobs:
     runs-on: windows-latest
     steps:
     - name: 检出代码
-      uses: actions/checkout@v4
+      uses: actions/checkout@v5
 
     - name: 设置Flutter
       uses: subosito/flutter-action@v2
@@ -147,7 +147,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - name: 检出代码
-      uses: actions/checkout@v4
+      uses: actions/checkout@v5
 
     - name: 设置Flutter
       uses: subosito/flutter-action@v2
@@ -187,7 +187,7 @@ jobs:
     runs-on: macos-latest
     steps:
     - name: 检出代码
-      uses: actions/checkout@v4
+      uses: actions/checkout@v5
 
     - name: 设置Flutter
       uses: subosito/flutter-action@v2
@@ -222,7 +222,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - name: 检出代码
-      uses: actions/checkout@v4
+      uses: actions/checkout@v5
 
     - name: 设置Flutter
       uses: subosito/flutter-action@v2
@@ -257,7 +257,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - name: 检出代码
-      uses: actions/checkout@v4
+      uses: actions/checkout@v5
 
     - name: 设置Dart
       uses: dart-lang/setup-dart@v1
