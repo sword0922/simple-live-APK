@@ -68,7 +68,7 @@ jobs:
 
     - name: 设置Java
       if: matrix.platform == 'android'
-      uses: actions/setup-java@v4
+      uses: actions/setup-java@v5
       with:
         distribution: 'zulu'
         java-version: '17'
