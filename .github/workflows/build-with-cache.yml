@@ -1,0 +1,317 @@
+name: 缓存优化构建
+
+on:
+  push:
+    branches: [ main, master ]
+    tags: [ 'v*' ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+env:
+  PUB_HOSTED_URL: https://pub.flutter-io.cn
+  FLUTTER_STORAGE_BASE_URL: https://storage.flutter-io.cn
+  FLUTTER_VERSION: '3.24.0'
+
+jobs:
+  # 构建Android应用（带缓存）
+  build-android-cached:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        app: 
+          - name: simple_live_app
+            java_version: '17'
+          - name: simple_live_tv_app
+            java_version: '11'
+    steps:
+    - name: 检出代码
+      uses: actions/checkout@v4
+
+    - name: 设置Flutter
+      uses: subosito/flutter-action@v2
+      with:
+        flutter-version: ${{ env.FLUTTER_VERSION }}
+        channel: 'stable'
+        cache: true
+
+    - name: 设置Java ${{ matrix.app.java_version }}
+      uses: actions/setup-java@v4
+      with:
+        distribution: 'zulu'
+        java-version: ${{ matrix.app.java_version }}
+
+    - name: 缓存Gradle依赖
+      uses: actions/cache@v4
+      with:
+        path: |
+          ${{ matrix.app.name }}/android/.gradle
+          ${{ matrix.app.name }}/android/app/build
+        key: gradle-${{ matrix.app.name }}-${{ hashFiles('**/build.gradle', '**/gradle.lockfile') }}
+        restore-keys: |
+          gradle-${{ matrix.app.name }}-
+          gradle-
+
+    - name: 缓存Flutter依赖
+      uses: actions/cache@v4
+      with:
+        path: |
+          ${{ matrix.app.name }}/.dart_tool
+          ${{ matrix.app.name }}/build
+        key: flutter-${{ matrix.app.name }}-${{ hashFiles('**/pubspec.lock') }}
+        restore-keys: |
+          flutter-${{ matrix.app.name }}-
+          flutter-
+
+    - name: 安装依赖
+      run: |
+        cd ${{ matrix.app.name }}
+        flutter pub get
+
+    - name: 构建APK
+      run: |
+        cd ${{ matrix.app.name }}
+        flutter build apk --release
+
+    - name: 构建AAB
+      run: |
+        cd ${{ matrix.app.name }}
+        flutter build appbundle --release
+
+    - name: 上传APK
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ matrix.app.name }}-apk-cached
+        path: ${{ matrix.app.name }}/build/app/outputs/flutter-apk/app-release.apk
+
+    - name: 上传AAB
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ matrix.app.name }}-aab-cached
+        path: ${{ matrix.app.name }}/build/app/outputs/bundle/release/app-release.aab
+
+  # 构建桌面应用（带缓存）
+  build-desktop-cached:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        app: [simple_live_app]
+        include:
+          - os: ubuntu-latest
+            platform: linux
+            extension: tar.gz
+          - os: windows-latest
+            platform: windows
+            extension: zip
+          - os: macos-latest
+            platform: macos
+            extension: zip
+    steps:
+    - name: 检出代码
+      uses: actions/checkout@v4
+
+    - name: 设置Flutter
+      uses: subosito/flutter-action@v2
+      with:
+        flutter-version: ${{ env.FLUTTER_VERSION }}
+        channel: 'stable'
+        cache: true
+
+    - name: 安装Linux依赖
+      if: matrix.os == 'ubuntu-latest'
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev
+
+    - name: 缓存Flutter依赖
+      uses: actions/cache@v4
+      with:
+        path: |
+          ${{ matrix.app }}/.dart_tool
+          ${{ matrix.app }}/build
+        key: flutter-${{ matrix.app }}-${{ matrix.platform }}-${{ hashFiles('**/pubspec.lock') }}
+        restore-keys: |
+          flutter-${{ matrix.app }}-${{ matrix.platform }}-
+          flutter-${{ matrix.app }}-
+          flutter-
+
+    - name: 安装依赖
+      run: |
+        cd ${{ matrix.app }}
+        flutter pub get
+
+    - name: 构建应用
+      run: |
+        cd ${{ matrix.app }}
+        flutter build ${{ matrix.platform }} --release
+
+    - name: 打包Linux应用
+      if: matrix.os == 'ubuntu-latest'
+      run: |
+        cd ${{ matrix.app }}/build/linux/x64/release/bundle
+        tar -czf ../../../SimpleLiveApp-Linux-Cached.tar.gz .
+
+    - name: 打包Windows应用
+      if: matrix.os == 'windows-latest'
+      run: |
+        cd ${{ matrix.app }}/build/windows/x64/runner/Release
+        Compress-Archive -Path * -DestinationPath ../../../SimpleLiveApp-Windows-Cached.zip
+
+    - name: 打包macOS应用
+      if: matrix.os == 'macos-latest'
+      run: |
+        cd ${{ matrix.app }}/build/macos/Build/Products/Release
+        zip -r ../../../SimpleLiveApp-macOS-Cached.zip SimpleLiveApp.app
+
+    - name: 上传构建产物
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ matrix.platform }}-app-cached
+        path: ${{ matrix.app }}/build/${{ matrix.platform }}/SimpleLiveApp-${{ matrix.platform == 'linux' && 'Linux' || matrix.platform == 'windows' && 'Windows' || 'macOS' }}-Cached.${{ matrix.extension }}
+
+  # 构建Web应用（带缓存）
+  build-web-cached:
+    runs-on: ubuntu-latest
+    steps:
+    - name: 检出代码
+      uses: actions/checkout@v4
+
+    - name: 设置Flutter
+      uses: subosito/flutter-action@v2
+      with:
+        flutter-version: ${{ env.FLUTTER_VERSION }}
+        channel: 'stable'
+        cache: true
+
+    - name: 缓存Flutter依赖
+      uses: actions/cache@v4
+      with:
+        path: |
+          simple_live_app/.dart_tool
+          simple_live_app/build
+        key: flutter-web-${{ hashFiles('**/pubspec.lock') }}
+        restore-keys: |
+          flutter-web-
+          flutter-
+
+    - name: 安装依赖
+      run: |
+        cd simple_live_app
+        flutter pub get
+
+    - name: 构建Web应用
+      run: |
+        cd simple_live_app
+        flutter build web --release
+
+    - name: 压缩Web应用
+      run: |
+        cd simple_live_app/build/web
+        zip -r ../SimpleLiveApp-Web-Cached.zip .
+
+    - name: 上传Web应用
+      uses: actions/upload-artifact@v4
+      with:
+        name: web-app-cached
+        path: simple_live_app/build/SimpleLiveApp-Web-Cached.zip
+
+  # 构建控制台应用（带缓存）
+  build-console-cached:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    steps:
+    - name: 检出代码
+      uses: actions/checkout@v4
+
+    - name: 设置Dart
+      uses: dart-lang/setup-dart@v1
+      with:
+        sdk: stable
+
+    - name: 缓存Dart依赖
+      uses: actions/cache@v4
+      with:
+        path: |
+          simple_live_console/.dart_tool
+          simple_live_console/build
+        key: dart-console-${{ matrix.os }}-${{ hashFiles('**/pubspec.lock') }}
+        restore-keys: |
+          dart-console-${{ matrix.os }}-
+          dart-console-
+          dart-
+
+    - name: 安装依赖
+      run: |
+        cd simple_live_console
+        dart pub get
+
+    - name: 构建控制台应用
+      run: |
+        cd simple_live_console
+        dart compile exe bin/simple_live_console.dart -o simple_live_console
+
+    - name: 上传控制台应用
+      uses: actions/upload-artifact@v4
+      with:
+        name: console-app-cached-${{ matrix.os }}
+        path: simple_live_console/simple_live_console
+
+  # 创建发布
+  create-release-cached:
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: [build-android-cached, build-desktop-cached, build-web-cached, build-console-cached]
+    runs-on: ubuntu-latest
+    steps:
+    - name: 下载所有构建产物
+      uses: actions/download-artifact@v4
+
+    - name: 获取版本号
+      id: version
+      run: |
+        echo "version=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+
+    - name: 创建发布
+      uses: softprops/action-gh-release@v1
+      with:
+        tag_name: ${{ steps.version.outputs.version }}
+        name: Simple Live ${{ steps.version.outputs.version }} (Cached Build)
+        body: |
+          ## Simple Live ${{ steps.version.outputs.version }} (缓存优化构建)
+          
+          此版本使用缓存优化构建，构建速度更快。
+          
+          ### 📱 移动应用
+          - **Android APK**: 适用于Android设备的安装包
+          - **Android AAB**: 适用于Google Play Store的应用包
+          - **TV应用**: 专为Android TV优化的版本
+          
+          ### 🖥️ 桌面应用
+          - **Windows**: 适用于Windows 10/11的桌面应用
+          - **macOS**: 适用于macOS的桌面应用
+          - **Linux**: 适用于Linux发行版的桌面应用
+          
+          ### 🌐 Web应用
+          - **Web版本**: 可在浏览器中直接使用的Web应用
+          
+          ### 🖥️ 控制台应用
+          - **命令行工具**: 适用于服务器和开发环境的命令行版本
+        files: |
+          simple_live_app-apk-cached/app-release.apk
+          simple_live_app-aab-cached/app-release.aab
+          simple_live_tv_app-apk-cached/app-release.apk
+          simple_live_tv_app-aab-cached/app-release.aab
+          windows-app-cached/SimpleLiveApp-Windows-Cached.zip
+          linux-app-cached/SimpleLiveApp-Linux-Cached.tar.gz
+          macos-app-cached/SimpleLiveApp-macOS-Cached.zip
+          web-app-cached/SimpleLiveApp-Web-Cached.zip
+          console-app-cached-ubuntu-latest/simple_live_console
+          console-app-cached-windows-latest/simple_live_console
+          console-app-cached-macos-latest/simple_live_console
+        draft: false
+        prerelease: false
+        generate_release_notes: true
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -1,0 +1,309 @@
+name: 构建全平台应用
+
+on:
+  push:
+    branches: [ main, master ]
+    tags: [ 'v*' ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+env:
+  PUB_HOSTED_URL: https://pub.flutter-io.cn
+  FLUTTER_STORAGE_BASE_URL: https://storage.flutter-io.cn
+
+jobs:
+  # 构建Android APK
+  build-android:
+    runs-on: ubuntu-latest
+    steps:
+    - name: 检出代码
+      uses: actions/checkout@v4
+
+    - name: 设置Flutter
+      uses: subosito/flutter-action@v2
+      with:
+        flutter-version: '3.24.0'
+        channel: 'stable'
+        cache: true
+
+    - name: 设置Java
+      uses: actions/setup-java@v4
+      with:
+        distribution: 'zulu'
+        java-version: '17'
+
+    - name: 安装依赖
+      run: |
+        cd simple_live_app
+        flutter pub get
+
+    - name: 构建APK
+      run: |
+        cd simple_live_app
+        flutter build apk --release
+
+    - name: 构建AAB
+      run: |
+        cd simple_live_app
+        flutter build appbundle --release
+
+    - name: 上传APK
+      uses: actions/upload-artifact@v4
+      with:
+        name: android-apk
+        path: simple_live_app/build/app/outputs/flutter-apk/app-release.apk
+
+    - name: 上传AAB
+      uses: actions/upload-artifact@v4
+      with:
+        name: android-aab
+        path: simple_live_app/build/app/outputs/bundle/release/app-release.aab
+
+  # 构建TV应用
+  build-tv-app:
+    runs-on: ubuntu-latest
+    steps:
+    - name: 检出代码
+      uses: actions/checkout@v4
+
+    - name: 设置Flutter
+      uses: subosito/flutter-action@v2
+      with:
+        flutter-version: '3.24.0'
+        channel: 'stable'
+        cache: true
+
+    - name: 设置Java
+      uses: actions/setup-java@v4
+      with:
+        distribution: 'zulu'
+        java-version: '17'
+
+    - name: 安装依赖
+      run: |
+        cd simple_live_tv_app
+        flutter pub get
+
+    - name: 构建TV APK
+      run: |
+        cd simple_live_tv_app
+        flutter build apk --release
+
+    - name: 构建TV AAB
+      run: |
+        cd simple_live_tv_app
+        flutter build appbundle --release
+
+    - name: 上传TV APK
+      uses: actions/upload-artifact@v4
+      with:
+        name: tv-apk
+        path: simple_live_tv_app/build/app/outputs/flutter-apk/app-release.apk
+
+    - name: 上传TV AAB
+      uses: actions/upload-artifact@v4
+      with:
+        name: tv-aab
+        path: simple_live_tv_app/build/app/outputs/bundle/release/app-release.aab
+
+  # 构建Windows应用
+  build-windows:
+    runs-on: windows-latest
+    steps:
+    - name: 检出代码
+      uses: actions/checkout@v4
+
+    - name: 设置Flutter
+      uses: subosito/flutter-action@v2
+      with:
+        flutter-version: '3.24.0'
+        channel: 'stable'
+        cache: true
+
+    - name: 安装依赖
+      run: |
+        cd simple_live_app
+        flutter pub get
+
+    - name: 构建Windows应用
+      run: |
+        cd simple_live_app
+        flutter build windows --release
+
+    - name: 压缩Windows应用
+      run: |
+        cd simple_live_app/build/windows/x64/runner/Release
+        Compress-Archive -Path * -DestinationPath ../../../SimpleLiveApp-Windows.zip
+
+    - name: 上传Windows应用
+      uses: actions/upload-artifact@v4
+      with:
+        name: windows-app
+        path: simple_live_app/build/windows/SimpleLiveApp-Windows.zip
+
+  # 构建Linux应用
+  build-linux:
+    runs-on: ubuntu-latest
+    steps:
+    - name: 检出代码
+      uses: actions/checkout@v4
+
+    - name: 设置Flutter
+      uses: subosito/flutter-action@v2
+      with:
+        flutter-version: '3.24.0'
+        channel: 'stable'
+        cache: true
+
+    - name: 安装依赖
+      run: |
+        cd simple_live_app
+        flutter pub get
+
+    - name: 安装Linux依赖
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev
+
+    - name: 构建Linux应用
+      run: |
+        cd simple_live_app
+        flutter build linux --release
+
+    - name: 压缩Linux应用
+      run: |
+        cd simple_live_app/build/linux/x64/release/bundle
+        tar -czf ../../../SimpleLiveApp-Linux.tar.gz .
+
+    - name: 上传Linux应用
+      uses: actions/upload-artifact@v4
+      with:
+        name: linux-app
+        path: simple_live_app/build/linux/SimpleLiveApp-Linux.tar.gz
+
+  # 构建macOS应用
+  build-macos:
+    runs-on: macos-latest
+    steps:
+    - name: 检出代码
+      uses: actions/checkout@v4
+
+    - name: 设置Flutter
+      uses: subosito/flutter-action@v2
+      with:
+        flutter-version: '3.24.0'
+        channel: 'stable'
+        cache: true
+
+    - name: 安装依赖
+      run: |
+        cd simple_live_app
+        flutter pub get
+
+    - name: 构建macOS应用
+      run: |
+        cd simple_live_app
+        flutter build macos --release
+
+    - name: 压缩macOS应用
+      run: |
+        cd simple_live_app/build/macos/Build/Products/Release
+        zip -r ../../../SimpleLiveApp-macOS.zip SimpleLiveApp.app
+
+    - name: 上传macOS应用
+      uses: actions/upload-artifact@v4
+      with:
+        name: macos-app
+        path: simple_live_app/build/macos/SimpleLiveApp-macOS.zip
+
+  # 构建Web应用
+  build-web:
+    runs-on: ubuntu-latest
+    steps:
+    - name: 检出代码
+      uses: actions/checkout@v4
+
+    - name: 设置Flutter
+      uses: subosito/flutter-action@v2
+      with:
+        flutter-version: '3.24.0'
+        channel: 'stable'
+        cache: true
+
+    - name: 安装依赖
+      run: |
+        cd simple_live_app
+        flutter pub get
+
+    - name: 构建Web应用
+      run: |
+        cd simple_live_app
+        flutter build web --release
+
+    - name: 压缩Web应用
+      run: |
+        cd simple_live_app/build/web
+        zip -r ../SimpleLiveApp-Web.zip .
+
+    - name: 上传Web应用
+      uses: actions/upload-artifact@v4
+      with:
+        name: web-app
+        path: simple_live_app/build/SimpleLiveApp-Web.zip
+
+  # 构建控制台应用
+  build-console:
+    runs-on: ubuntu-latest
+    steps:
+    - name: 检出代码
+      uses: actions/checkout@v4
+
+    - name: 设置Dart
+      uses: dart-lang/setup-dart@v1
+      with:
+        sdk: stable
+
+    - name: 安装依赖
+      run: |
+        cd simple_live_console
+        dart pub get
+
+    - name: 构建控制台应用
+      run: |
+        cd simple_live_console
+        dart compile exe bin/simple_live_console.dart -o simple_live_console
+
+    - name: 上传控制台应用
+      uses: actions/upload-artifact@v4
+      with:
+        name: console-app
+        path: simple_live_console/simple_live_console
+
+  # 创建发布
+  create-release:
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: [build-android, build-tv-app, build-windows, build-linux, build-macos, build-web, build-console]
+    runs-on: ubuntu-latest
+    steps:
+    - name: 下载所有构建产物
+      uses: actions/download-artifact@v4
+
+    - name: 创建发布
+      uses: softprops/action-gh-release@v1
+      with:
+        files: |
+          android-apk/app-release.apk
+          android-aab/app-release.aab
+          tv-apk/app-release.apk
+          tv-aab/app-release.aab
+          windows-app/SimpleLiveApp-Windows.zip
+          linux-app/SimpleLiveApp-Linux.tar.gz
+          macos-app/SimpleLiveApp-macOS.zip
+          web-app/SimpleLiveApp-Web.zip
+          console-app/simple_live_console
+        draft: false
+        prerelease: false
+        generate_release_notes: true
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

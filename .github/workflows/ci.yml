@@ -1,0 +1,180 @@
+name: 持续集成
+
+on:
+  push:
+    branches: [ main, master, develop ]
+  pull_request:
+    branches: [ main, master, develop ]
+
+env:
+  PUB_HOSTED_URL: https://pub.flutter-io.cn
+  FLUTTER_STORAGE_BASE_URL: https://storage.flutter-io.cn
+
+jobs:
+  # 代码分析
+  analyze:
+    runs-on: ubuntu-latest
+    steps:
+    - name: 检出代码
+      uses: actions/checkout@v4
+
+    - name: 设置Flutter
+      uses: subosito/flutter-action@v2
+      with:
+        flutter-version: '3.24.0'
+        channel: 'stable'
+        cache: true
+
+    - name: 分析simple_live_app
+      run: |
+        cd simple_live_app
+        flutter pub get
+        flutter analyze
+
+    - name: 分析simple_live_tv_app
+      run: |
+        cd simple_live_tv_app
+        flutter pub get
+        flutter analyze
+
+    - name: 分析simple_live_core
+      run: |
+        cd simple_live_core
+        flutter pub get
+        flutter analyze
+
+    - name: 设置Dart
+      uses: dart-lang/setup-dart@v1
+      with:
+        sdk: stable
+
+    - name: 分析simple_live_console
+      run: |
+        cd simple_live_console
+        dart pub get
+        dart analyze
+
+  # 运行测试
+  test:
+    runs-on: ubuntu-latest
+    steps:
+    - name: 检出代码
+      uses: actions/checkout@v4
+
+    - name: 设置Flutter
+      uses: subosito/flutter-action@v2
+      with:
+        flutter-version: '3.24.0'
+        channel: 'stable'
+        cache: true
+
+    - name: 测试simple_live_app
+      run: |
+        cd simple_live_app
+        flutter pub get
+        flutter test
+
+    - name: 测试simple_live_tv_app
+      run: |
+        cd simple_live_tv_app
+        flutter pub get
+        flutter test
+
+    - name: 测试simple_live_core
+      run: |
+        cd simple_live_core
+        flutter pub get
+        flutter test
+
+    - name: 设置Dart
+      uses: dart-lang/setup-dart@v1
+      with:
+        sdk: stable
+
+    - name: 测试simple_live_console
+      run: |
+        cd simple_live_console
+        dart pub get
+        dart test
+
+  # 检查依赖
+  check-dependencies:
+    runs-on: ubuntu-latest
+    steps:
+    - name: 检出代码
+      uses: actions/checkout@v4
+
+    - name: 设置Flutter
+      uses: subosito/flutter-action@v2
+      with:
+        flutter-version: '3.24.0'
+        channel: 'stable'
+        cache: true
+
+    - name: 检查simple_live_app依赖
+      run: |
+        cd simple_live_app
+        flutter pub get
+        flutter pub deps
+
+    - name: 检查simple_live_tv_app依赖
+      run: |
+        cd simple_live_tv_app
+        flutter pub get
+        flutter pub deps
+
+    - name: 检查simple_live_core依赖
+      run: |
+        cd simple_live_core
+        flutter pub get
+        flutter pub deps
+
+    - name: 设置Dart
+      uses: dart-lang/setup-dart@v1
+      with:
+        sdk: stable
+
+    - name: 检查simple_live_console依赖
+      run: |
+        cd simple_live_console
+        dart pub get
+        dart pub deps
+
+  # 构建检查（不生成产物）
+  build-check:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        app: [simple_live_app, simple_live_tv_app]
+        exclude:
+          - os: windows-latest
+            app: simple_live_tv_app
+          - os: macos-latest
+            app: simple_live_tv_app
+    steps:
+    - name: 检出代码
+      uses: actions/checkout@v4
+
+    - name: 设置Flutter
+      uses: subosito/flutter-action@v2
+      with:
+        flutter-version: '3.24.0'
+        channel: 'stable'
+        cache: true
+
+    - name: 安装依赖
+      run: |
+        cd ${{ matrix.app }}
+        flutter pub get
+
+    - name: 构建检查
+      run: |
+        cd ${{ matrix.app }}
+        if [ "${{ matrix.os }}" = "ubuntu-latest" ]; then
+          flutter build apk --debug
+        elif [ "${{ matrix.os }}" = "windows-latest" ]; then
+          flutter build windows --debug
+        elif [ "${{ matrix.os }}" = "macos-latest" ]; then
+          flutter build macos --debug
+        fi

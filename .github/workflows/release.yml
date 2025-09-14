@@ -1,0 +1,255 @@
+name: 创建发布
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: '发布标签 (例如: v1.0.0)'
+        required: true
+        type: string
+
+env:
+  PUB_HOSTED_URL: https://pub.flutter-io.cn
+  FLUTTER_STORAGE_BASE_URL: https://storage.flutter-io.cn
+
+jobs:
+  # 构建所有平台
+  build-all:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          # Android构建
+          - os: ubuntu-latest
+            platform: android
+            app: simple_live_app
+          - os: ubuntu-latest
+            platform: android
+            app: simple_live_tv_app
+          # 桌面应用构建
+          - os: ubuntu-latest
+            platform: linux
+            app: simple_live_app
+          - os: windows-latest
+            platform: windows
+            app: simple_live_app
+          - os: macos-latest
+            platform: macos
+            app: simple_live_app
+          # Web应用构建
+          - os: ubuntu-latest
+            platform: web
+            app: simple_live_app
+          # 控制台应用构建
+          - os: ubuntu-latest
+            platform: console
+            app: simple_live_console
+
+    steps:
+    - name: 检出代码
+      uses: actions/checkout@v4
+
+    - name: 设置Flutter
+      if: matrix.platform != 'console'
+      uses: subosito/flutter-action@v2
+      with:
+        flutter-version: '3.24.0'
+        channel: 'stable'
+        cache: true
+
+    - name: 设置Dart
+      if: matrix.platform == 'console'
+      uses: dart-lang/setup-dart@v1
+      with:
+        sdk: stable
+
+    - name: 设置Java
+      if: matrix.platform == 'android'
+      uses: actions/setup-java@v4
+      with:
+        distribution: 'zulu'
+        java-version: '17'
+
+    - name: 安装Linux依赖
+      if: matrix.os == 'ubuntu-latest' && matrix.platform == 'linux'
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev
+
+    - name: 安装依赖
+      run: |
+        cd ${{ matrix.app }}
+        if [ "${{ matrix.platform }}" = "console" ]; then
+          dart pub get
+        else
+          flutter pub get
+        fi
+
+    - name: 构建Android APK
+      if: matrix.platform == 'android'
+      run: |
+        cd ${{ matrix.app }}
+        flutter build apk --release
+
+    - name: 构建Android AAB
+      if: matrix.platform == 'android'
+      run: |
+        cd ${{ matrix.app }}
+        flutter build appbundle --release
+
+    - name: 构建桌面应用
+      if: matrix.platform == 'linux' || matrix.platform == 'windows' || matrix.platform == 'macos'
+      run: |
+        cd ${{ matrix.app }}
+        flutter build ${{ matrix.platform }} --release
+
+    - name: 构建Web应用
+      if: matrix.platform == 'web'
+      run: |
+        cd ${{ matrix.app }}
+        flutter build web --release
+
+    - name: 构建控制台应用
+      if: matrix.platform == 'console'
+      run: |
+        cd ${{ matrix.app }}
+        dart compile exe bin/simple_live_console.dart -o simple_live_console
+
+    - name: 打包Android APK
+      if: matrix.platform == 'android'
+      run: |
+        cd ${{ matrix.app }}/build/app/outputs/flutter-apk
+        cp app-release.apk ${{ matrix.app }}-release.apk
+
+    - name: 打包Android AAB
+      if: matrix.platform == 'android'
+      run: |
+        cd ${{ matrix.app }}/build/app/outputs/bundle/release
+        cp app-release.aab ${{ matrix.app }}-release.aab
+
+    - name: 打包Linux应用
+      if: matrix.platform == 'linux'
+      run: |
+        cd ${{ matrix.app }}/build/linux/x64/release/bundle
+        tar -czf ../../../${{ matrix.app }}-linux.tar.gz .
+
+    - name: 打包Windows应用
+      if: matrix.platform == 'windows'
+      run: |
+        cd ${{ matrix.app }}/build/windows/x64/runner/Release
+        Compress-Archive -Path * -DestinationPath ../../../${{ matrix.app }}-windows.zip
+
+    - name: 打包macOS应用
+      if: matrix.platform == 'macos'
+      run: |
+        cd ${{ matrix.app }}/build/macos/Build/Products/Release
+        zip -r ../../../${{ matrix.app }}-macos.zip SimpleLiveApp.app
+
+    - name: 打包Web应用
+      if: matrix.platform == 'web'
+      run: |
+        cd ${{ matrix.app }}/build/web
+        zip -r ../${{ matrix.app }}-web.zip .
+
+    - name: 上传构建产物
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ matrix.app }}-${{ matrix.platform }}
+        path: |
+          ${{ matrix.app }}/build/app/outputs/flutter-apk/${{ matrix.app }}-release.apk
+          ${{ matrix.app }}/build/app/outputs/bundle/release/${{ matrix.app }}-release.aab
+          ${{ matrix.app }}/build/linux/${{ matrix.app }}-linux.tar.gz
+          ${{ matrix.app }}/build/windows/${{ matrix.app }}-windows.zip
+          ${{ matrix.app }}/build/macos/${{ matrix.app }}-macos.zip
+          ${{ matrix.app }}/build/${{ matrix.app }}-web.zip
+          ${{ matrix.app }}/simple_live_console
+
+  # 创建发布
+  create-release:
+    needs: build-all
+    runs-on: ubuntu-latest
+    steps:
+    - name: 下载所有构建产物
+      uses: actions/download-artifact@v4
+
+    - name: 获取版本号
+      id: version
+      run: |
+        if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+          echo "version=${{ github.event.inputs.tag }}" >> $GITHUB_OUTPUT
+        else
+          echo "version=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+        fi
+
+    - name: 创建发布
+      uses: softprops/action-gh-release@v1
+      with:
+        tag_name: ${{ steps.version.outputs.version }}
+        name: Simple Live ${{ steps.version.outputs.version }}
+        body: |
+          ## Simple Live ${{ steps.version.outputs.version }}
+          
+          ### 📱 移动应用
+          - **Android APK**: 适用于Android设备的安装包
+          - **Android AAB**: 适用于Google Play Store的应用包
+          - **TV应用**: 专为Android TV优化的版本
+          
+          ### 🖥️ 桌面应用
+          - **Windows**: 适用于Windows 10/11的桌面应用
+          - **macOS**: 适用于macOS的桌面应用
+          - **Linux**: 适用于Linux发行版的桌面应用
+          
+          ### 🌐 Web应用
+          - **Web版本**: 可在浏览器中直接使用的Web应用
+          
+          ### 🖥️ 控制台应用
+          - **命令行工具**: 适用于服务器和开发环境的命令行版本
+          
+          ### 📋 安装说明
+          
+          #### Android
+          1. 下载APK文件
+          2. 在设备上启用"未知来源"安装
+          3. 安装APK文件
+          
+          #### Windows
+          1. 下载ZIP文件
+          2. 解压到任意目录
+          3. 运行SimpleLiveApp.exe
+          
+          #### macOS
+          1. 下载ZIP文件
+          2. 解压后双击SimpleLiveApp.app
+          3. 如遇安全提示，请在系统偏好设置中允许运行
+          
+          #### Linux
+          1. 下载tar.gz文件
+          2. 解压到任意目录
+          3. 运行./simple_live_app
+          
+          #### Web
+          1. 下载ZIP文件
+          2. 解压到Web服务器目录
+          3. 通过浏览器访问
+          
+          ### 🔧 控制台应用
+          1. 下载可执行文件
+          2. 在终端中运行
+        files: |
+          simple_live_app-android/simple_live_app-release.apk
+          simple_live_app-android/simple_live_app-release.aab
+          simple_live_tv_app-android/simple_live_tv_app-release.apk
+          simple_live_tv_app-android/simple_live_tv_app-release.aab
+          simple_live_app-linux/simple_live_app-linux.tar.gz
+          simple_live_app-windows/simple_live_app-windows.zip
+          simple_live_app-macos/simple_live_app-macos.zip
+          simple_live_app-web/simple_live_app-web.zip
+          simple_live_console-console/simple_live_console
+        draft: false
+        prerelease: false
+        generate_release_notes: true
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

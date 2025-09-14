@@ -1,0 +1,123 @@
+name: Android签名构建
+
+on:
+  workflow_dispatch:
+    inputs:
+      keystore_base64:
+        description: 'Base64编码的keystore文件'
+        required: true
+        type: string
+      keystore_password:
+        description: 'Keystore密码'
+        required: true
+        type: string
+      key_alias:
+        description: 'Key别名'
+        required: true
+        type: string
+      key_password:
+        description: 'Key密码'
+        required: true
+        type: string
+      app_type:
+        description: '应用类型'
+        required: true
+        default: 'both'
+        type: choice
+        options:
+        - both
+        - main
+        - tv
+
+env:
+  PUB_HOSTED_URL: https://pub.flutter-io.cn
+  FLUTTER_STORAGE_BASE_URL: https://storage.flutter-io.cn
+  FLUTTER_VERSION: '3.24.0'
+
+jobs:
+  build-signed-android:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        app: 
+          - name: simple_live_app
+            java_version: '17'
+            package_name: 'com.xycz.simple_live'
+            condition: ${{ github.event.inputs.app_type == 'both' || github.event.inputs.app_type == 'main' }}
+          - name: simple_live_tv_app
+            java_version: '11'
+            package_name: 'com.xycz.simple_live_tv'
+            condition: ${{ github.event.inputs.app_type == 'both' || github.event.inputs.app_type == 'tv' }}
+    steps:
+    - name: 检出代码
+      uses: actions/checkout@v4
+
+    - name: 设置Flutter
+      uses: subosito/flutter-action@v2
+      with:
+        flutter-version: ${{ env.FLUTTER_VERSION }}
+        channel: 'stable'
+        cache: true
+
+    - name: 设置Java ${{ matrix.app.java_version }}
+      uses: actions/setup-java@v4
+      with:
+        distribution: 'zulu'
+        java-version: ${{ matrix.app.java_version }}
+
+    - name: 创建keystore文件
+      run: |
+        echo "${{ github.event.inputs.keystore_base64 }}" | base64 -d > ${{ matrix.app.name }}/android/app/upload-keystore.jks
+
+    - name: 创建key.properties文件
+      run: |
+        cat > ${{ matrix.app.name }}/android/key.properties << EOF
+        storePassword=${{ github.event.inputs.keystore_password }}
+        keyPassword=${{ github.event.inputs.key_password }}
+        keyAlias=${{ github.event.inputs.key_alias }}
+        storeFile=upload-keystore.jks
+        EOF
+
+    - name: 安装依赖
+      run: |
+        cd ${{ matrix.app.name }}
+        flutter pub get
+
+    - name: 构建签名APK
+      run: |
+        cd ${{ matrix.app.name }}
+        flutter build apk --release
+
+    - name: 构建签名AAB
+      run: |
+        cd ${{ matrix.app.name }}
+        flutter build appbundle --release
+
+    - name: 构建多架构签名APK
+      run: |
+        cd ${{ matrix.app.name }}
+        flutter build apk --release --split-per-abi
+
+    - name: 上传签名APK
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ matrix.app.name }}-signed-apk
+        path: ${{ matrix.app.name }}/build/app/outputs/flutter-apk/app-release.apk
+
+    - name: 上传签名AAB
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ matrix.app.name }}-signed-aab
+        path: ${{ matrix.app.name }}/build/app/outputs/bundle/release/app-release.aab
+
+    - name: 上传多架构签名APK
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ matrix.app.name }}-signed-apk-split
+        path: ${{ matrix.app.name }}/build/app/outputs/flutter-apk/
+
+    - name: 清理敏感文件
+      if: always()
+      run: |
+        rm -f ${{ matrix.app.name }}/android/app/upload-keystore.jks
+        rm -f ${{ matrix.app.name }}/android/key.properties

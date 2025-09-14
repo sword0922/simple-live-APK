@@ -1,0 +1,363 @@
+name: 优化构建全平台应用
+
+on:
+  push:
+    branches: [ main, master ]
+    tags: [ 'v*' ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+    inputs:
+      build_type:
+        description: '构建类型'
+        required: true
+        default: 'all'
+        type: choice
+        options:
+        - all
+        - android
+        - desktop
+        - web
+        - console
+
+env:
+  PUB_HOSTED_URL: https://pub.flutter-io.cn
+  FLUTTER_STORAGE_BASE_URL: https://storage.flutter-io.cn
+  FLUTTER_VERSION: '3.24.0'
+
+jobs:
+  # 构建Android应用
+  build-android:
+    if: github.event.inputs.build_type == 'all' || github.event.inputs.build_type == 'android' || github.event.inputs.build_type == ''
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        app: 
+          - name: simple_live_app
+            java_version: '17'
+            package_name: 'com.xycz.simple_live'
+          - name: simple_live_tv_app
+            java_version: '11'
+            package_name: 'com.xycz.simple_live_tv'
+    steps:
+    - name: 检出代码
+      uses: actions/checkout@v4
+
+    - name: 设置Flutter
+      uses: subosito/flutter-action@v2
+      with:
+        flutter-version: ${{ env.FLUTTER_VERSION }}
+        channel: 'stable'
+        cache: true
+
+    - name: 设置Java ${{ matrix.app.java_version }}
+      uses: actions/setup-java@v4
+      with:
+        distribution: 'zulu'
+        java-version: ${{ matrix.app.java_version }}
+
+    - name: 安装依赖
+      run: |
+        cd ${{ matrix.app.name }}
+        flutter pub get
+
+    - name: 检查Flutter环境
+      run: |
+        flutter doctor -v
+
+    - name: 构建APK
+      run: |
+        cd ${{ matrix.app.name }}
+        flutter build apk --release --target-platform android-arm64
+
+    - name: 构建AAB
+      run: |
+        cd ${{ matrix.app.name }}
+        flutter build appbundle --release
+
+    - name: 构建多架构APK
+      run: |
+        cd ${{ matrix.app.name }}
+        flutter build apk --release --split-per-abi
+
+    - name: 上传APK
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ matrix.app.name }}-apk
+        path: ${{ matrix.app.name }}/build/app/outputs/flutter-apk/app-release.apk
+
+    - name: 上传AAB
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ matrix.app.name }}-aab
+        path: ${{ matrix.app.name }}/build/app/outputs/bundle/release/app-release.aab
+
+    - name: 上传多架构APK
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ matrix.app.name }}-apk-split
+        path: ${{ matrix.app.name }}/build/app/outputs/flutter-apk/
+
+  # 构建桌面应用
+  build-desktop:
+    if: github.event.inputs.build_type == 'all' || github.event.inputs.build_type == 'desktop' || github.event.inputs.build_type == ''
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        app: [simple_live_app]
+        include:
+          - os: ubuntu-latest
+            platform: linux
+            extension: tar.gz
+            arch: x64
+          - os: windows-latest
+            platform: windows
+            extension: zip
+            arch: x64
+          - os: macos-latest
+            platform: macos
+            extension: zip
+            arch: x64
+    steps:
+    - name: 检出代码
+      uses: actions/checkout@v4
+
+    - name: 设置Flutter
+      uses: subosito/flutter-action@v2
+      with:
+        flutter-version: ${{ env.FLUTTER_VERSION }}
+        channel: 'stable'
+        cache: true
+
+    - name: 安装Linux依赖
+      if: matrix.os == 'ubuntu-latest'
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev
+
+    - name: 安装依赖
+      run: |
+        cd ${{ matrix.app }}
+        flutter pub get
+
+    - name: 构建应用
+      run: |
+        cd ${{ matrix.app }}
+        flutter build ${{ matrix.platform }} --release
+
+    - name: 打包Linux应用
+      if: matrix.os == 'ubuntu-latest'
+      run: |
+        cd ${{ matrix.app }}/build/linux/x64/release/bundle
+        tar -czf ../../../SimpleLiveApp-Linux-${{ matrix.arch }}.tar.gz .
+
+    - name: 打包Windows应用
+      if: matrix.os == 'windows-latest'
+      run: |
+        cd ${{ matrix.app }}/build/windows/x64/runner/Release
+        Compress-Archive -Path * -DestinationPath ../../../SimpleLiveApp-Windows-${{ matrix.arch }}.zip
+
+    - name: 打包macOS应用
+      if: matrix.os == 'macos-latest'
+      run: |
+        cd ${{ matrix.app }}/build/macos/Build/Products/Release
+        zip -r ../../../SimpleLiveApp-macOS-${{ matrix.arch }}.zip SimpleLiveApp.app
+
+    - name: 上传构建产物
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ matrix.platform }}-app-${{ matrix.arch }}
+        path: ${{ matrix.app }}/build/${{ matrix.platform }}/SimpleLiveApp-${{ matrix.platform == 'linux' && 'Linux' || matrix.platform == 'windows' && 'Windows' || 'macOS' }}-${{ matrix.arch }}.${{ matrix.extension }}
+
+  # 构建Web应用
+  build-web:
+    if: github.event.inputs.build_type == 'all' || github.event.inputs.build_type == 'web' || github.event.inputs.build_type == ''
+    runs-on: ubuntu-latest
+    steps:
+    - name: 检出代码
+      uses: actions/checkout@v4
+
+    - name: 设置Flutter
+      uses: subosito/flutter-action@v2
+      with:
+        flutter-version: ${{ env.FLUTTER_VERSION }}
+        channel: 'stable'
+        cache: true
+
+    - name: 安装依赖
+      run: |
+        cd simple_live_app
+        flutter pub get
+
+    - name: 构建Web应用
+      run: |
+        cd simple_live_app
+        flutter build web --release --web-renderer html
+
+    - name: 构建Web应用 (CanvasKit)
+      run: |
+        cd simple_live_app
+        flutter build web --release --web-renderer canvaskit
+
+    - name: 压缩Web应用 (HTML)
+      run: |
+        cd simple_live_app/build/web
+        zip -r ../SimpleLiveApp-Web-HTML.zip .
+
+    - name: 压缩Web应用 (CanvasKit)
+      run: |
+        cd simple_live_app/build/web
+        zip -r ../SimpleLiveApp-Web-CanvasKit.zip .
+
+    - name: 上传Web应用 (HTML)
+      uses: actions/upload-artifact@v4
+      with:
+        name: web-app-html
+        path: simple_live_app/build/SimpleLiveApp-Web-HTML.zip
+
+    - name: 上传Web应用 (CanvasKit)
+      uses: actions/upload-artifact@v4
+      with:
+        name: web-app-canvaskit
+        path: simple_live_app/build/SimpleLiveApp-Web-CanvasKit.zip
+
+  # 构建控制台应用
+  build-console:
+    if: github.event.inputs.build_type == 'all' || github.event.inputs.build_type == 'console' || github.event.inputs.build_type == ''
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    steps:
+    - name: 检出代码
+      uses: actions/checkout@v4
+
+    - name: 设置Dart
+      uses: dart-lang/setup-dart@v1
+      with:
+        sdk: stable
+
+    - name: 安装依赖
+      run: |
+        cd simple_live_console
+        dart pub get
+
+    - name: 构建控制台应用
+      run: |
+        cd simple_live_console
+        dart compile exe bin/simple_live_console.dart -o simple_live_console
+
+    - name: 上传控制台应用
+      uses: actions/upload-artifact@v4
+      with:
+        name: console-app-${{ matrix.os }}
+        path: simple_live_console/simple_live_console
+
+  # 创建发布
+  create-release:
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: [build-android, build-desktop, build-web, build-console]
+    runs-on: ubuntu-latest
+    steps:
+    - name: 下载所有构建产物
+      uses: actions/download-artifact@v4
+
+    - name: 获取版本号
+      id: version
+      run: |
+        echo "version=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+
+    - name: 创建发布
+      uses: softprops/action-gh-release@v1
+      with:
+        tag_name: ${{ steps.version.outputs.version }}
+        name: Simple Live ${{ steps.version.outputs.version }}
+        body: |
+          ## Simple Live ${{ steps.version.outputs.version }}
+          
+          ### 📱 移动应用
+          - **Android APK**: 适用于Android设备的安装包
+          - **Android AAB**: 适用于Google Play Store的应用包
+          - **TV应用**: 专为Android TV优化的版本
+          
+          ### 🖥️ 桌面应用
+          - **Windows**: 适用于Windows 10/11的桌面应用
+          - **macOS**: 适用于macOS的桌面应用
+          - **Linux**: 适用于Linux发行版的桌面应用
+          
+          ### 🌐 Web应用
+          - **Web版本 (HTML)**: 兼容性更好的Web应用
+          - **Web版本 (CanvasKit)**: 性能更好的Web应用
+          
+          ### 🖥️ 控制台应用
+          - **命令行工具**: 适用于服务器和开发环境的命令行版本
+          
+          ### 📋 安装说明
+          
+          #### Android
+          1. 下载APK文件
+          2. 在设备上启用"未知来源"安装
+          3. 安装APK文件
+          
+          #### Windows
+          1. 下载ZIP文件
+          2. 解压到任意目录
+          3. 运行SimpleLiveApp.exe
+          
+          #### macOS
+          1. 下载ZIP文件
+          2. 解压后双击SimpleLiveApp.app
+          3. 如遇安全提示，请在系统偏好设置中允许运行
+          
+          #### Linux
+          1. 下载tar.gz文件
+          2. 解压到任意目录
+          3. 运行./simple_live_app
+          
+          #### Web
+          1. 下载ZIP文件
+          2. 解压到Web服务器目录
+          3. 通过浏览器访问
+          
+          ### 🔧 控制台应用
+          1. 下载可执行文件
+          2. 在终端中运行
+        files: |
+          simple_live_app-apk/app-release.apk
+          simple_live_app-aab/app-release.aab
+          simple_live_tv_app-apk/app-release.apk
+          simple_live_tv_app-aab/app-release.aab
+          simple_live_app-apk-split/
+          simple_live_tv_app-apk-split/
+          windows-app-x64/SimpleLiveApp-Windows-x64.zip
+          linux-app-x64/SimpleLiveApp-Linux-x64.tar.gz
+          macos-app-x64/SimpleLiveApp-macOS-x64.zip
+          web-app-html/SimpleLiveApp-Web-HTML.zip
+          web-app-canvaskit/SimpleLiveApp-Web-CanvasKit.zip
+          console-app-ubuntu-latest/simple_live_console
+          console-app-windows-latest/simple_live_console
+          console-app-macos-latest/simple_live_console
+        draft: false
+        prerelease: false
+        generate_release_notes: true
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # 构建通知
+  notify:
+    if: always()
+    needs: [build-android, build-desktop, build-web, build-console]
+    runs-on: ubuntu-latest
+    steps:
+    - name: 构建状态通知
+      run: |
+        if [ "${{ needs.build-android.result }}" = "success" ] && [ "${{ needs.build-desktop.result }}" = "success" ] && [ "${{ needs.build-web.result }}" = "success" ] && [ "${{ needs.build-console.result }}" = "success" ]; then
+          echo "✅ 所有平台构建成功！"
+        else
+          echo "❌ 部分平台构建失败"
+          echo "Android: ${{ needs.build-android.result }}"
+          echo "Desktop: ${{ needs.build-desktop.result }}"
+          echo "Web: ${{ needs.build-web.result }}"
+          echo "Console: ${{ needs.build-console.result }}"
+        fi

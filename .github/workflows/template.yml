@@ -1,0 +1,38 @@
+# GitHub Actions 工作流模板
+# 复制此文件并根据需要修改
+
+name: 工作流名称
+
+on:
+  # 触发条件
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:  # 允许手动触发
+
+env:
+  # 环境变量
+  PUB_HOSTED_URL: https://pub.flutter-io.cn
+  FLUTTER_STORAGE_BASE_URL: https://storage.flutter-io.cn
+
+jobs:
+  # 作业名称
+  job-name:
+    runs-on: ubuntu-latest  # 运行环境
+    steps:
+    - name: 步骤名称
+      uses: actions/checkout@v4
+
+    - name: 设置Flutter
+      uses: subosito/flutter-action@v2
+      with:
+        flutter-version: '3.24.0'
+        channel: 'stable'
+        cache: true
+
+    - name: 执行命令
+      run: |
+        echo "在这里添加你的命令"
+        # flutter pub get
+        # flutter build apk --release

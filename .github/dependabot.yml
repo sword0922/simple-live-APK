@@ -1,0 +1,43 @@
+version: 2
+updates:
+  # 更新Flutter依赖
+  - package-ecosystem: "pub"
+    directory: "/simple_live_app"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+    open-pull-requests-limit: 5
+
+  - package-ecosystem: "pub"
+    directory: "/simple_live_tv_app"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+    open-pull-requests-limit: 5
+
+  - package-ecosystem: "pub"
+    directory: "/simple_live_core"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+    open-pull-requests-limit: 5
+
+  - package-ecosystem: "pub"
+    directory: "/simple_live_console"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+    open-pull-requests-limit: 5
+
+  # 更新GitHub Actions
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+    open-pull-requests-limit: 3

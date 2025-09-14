@@ -1,0 +1,223 @@
+name: 矩阵构建全平台应用
+
+on:
+  push:
+    branches: [ main, master ]
+    tags: [ 'v*' ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+env:
+  PUB_HOSTED_URL: https://pub.flutter-io.cn
+  FLUTTER_STORAGE_BASE_URL: https://storage.flutter-io.cn
+
+jobs:
+  # 构建移动应用（Android）
+  build-mobile:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        app: [simple_live_app, simple_live_tv_app]
+    steps:
+    - name: 检出代码
+      uses: actions/checkout@v4
+
+    - name: 设置Flutter
+      uses: subosito/flutter-action@v2
+      with:
+        flutter-version: '3.24.0'
+        channel: 'stable'
+        cache: true
+
+    - name: 设置Java
+      uses: actions/setup-java@v4
+      with:
+        distribution: 'zulu'
+        java-version: '17'
+
+    - name: 安装依赖
+      run: |
+        cd ${{ matrix.app }}
+        flutter pub get
+
+    - name: 构建APK
+      run: |
+        cd ${{ matrix.app }}
+        flutter build apk --release
+
+    - name: 构建AAB
+      run: |
+        cd ${{ matrix.app }}
+        flutter build appbundle --release
+
+    - name: 上传APK
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ matrix.app }}-apk
+        path: ${{ matrix.app }}/build/app/outputs/flutter-apk/app-release.apk
+
+    - name: 上传AAB
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ matrix.app }}-aab
+        path: ${{ matrix.app }}/build/app/outputs/bundle/release/app-release.aab
+
+  # 构建桌面应用
+  build-desktop:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        app: [simple_live_app]
+        include:
+          - os: ubuntu-latest
+            platform: linux
+            extension: tar.gz
+          - os: windows-latest
+            platform: windows
+            extension: zip
+          - os: macos-latest
+            platform: macos
+            extension: zip
+    steps:
+    - name: 检出代码
+      uses: actions/checkout@v4
+
+    - name: 设置Flutter
+      uses: subosito/flutter-action@v2
+      with:
+        flutter-version: '3.24.0'
+        channel: 'stable'
+        cache: true
+
+    - name: 安装Linux依赖
+      if: matrix.os == 'ubuntu-latest'
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev
+
+    - name: 安装依赖
+      run: |
+        cd ${{ matrix.app }}
+        flutter pub get
+
+    - name: 构建应用
+      run: |
+        cd ${{ matrix.app }}
+        flutter build ${{ matrix.platform }} --release
+
+    - name: 打包Linux应用
+      if: matrix.os == 'ubuntu-latest'
+      run: |
+        cd ${{ matrix.app }}/build/linux/x64/release/bundle
+        tar -czf ../../../SimpleLiveApp-Linux.tar.gz .
+
+    - name: 打包Windows应用
+      if: matrix.os == 'windows-latest'
+      run: |
+        cd ${{ matrix.app }}/build/windows/x64/runner/Release
+        Compress-Archive -Path * -DestinationPath ../../../SimpleLiveApp-Windows.zip
+
+    - name: 打包macOS应用
+      if: matrix.os == 'macos-latest'
+      run: |
+        cd ${{ matrix.app }}/build/macos/Build/Products/Release
+        zip -r ../../../SimpleLiveApp-macOS.zip SimpleLiveApp.app
+
+    - name: 上传构建产物
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ matrix.platform }}-app
+        path: ${{ matrix.app }}/build/${{ matrix.platform }}/SimpleLiveApp-${{ matrix.platform == 'linux' && 'Linux' || matrix.platform == 'windows' && 'Windows' || 'macOS' }}.${{ matrix.extension }}
+
+  # 构建Web应用
+  build-web:
+    runs-on: ubuntu-latest
+    steps:
+    - name: 检出代码
+      uses: actions/checkout@v4
+
+    - name: 设置Flutter
+      uses: subosito/flutter-action@v2
+      with:
+        flutter-version: '3.24.0'
+        channel: 'stable'
+        cache: true
+
+    - name: 安装依赖
+      run: |
+        cd simple_live_app
+        flutter pub get
+
+    - name: 构建Web应用
+      run: |
+        cd simple_live_app
+        flutter build web --release
+
+    - name: 压缩Web应用
+      run: |
+        cd simple_live_app/build/web
+        zip -r ../SimpleLiveApp-Web.zip .
+
+    - name: 上传Web应用
+      uses: actions/upload-artifact@v4
+      with:
+        name: web-app
+        path: simple_live_app/build/SimpleLiveApp-Web.zip
+
+  # 构建控制台应用
+  build-console:
+    runs-on: ubuntu-latest
+    steps:
+    - name: 检出代码
+      uses: actions/checkout@v4
+
+    - name: 设置Dart
+      uses: dart-lang/setup-dart@v1
+      with:
+        sdk: stable
+
+    - name: 安装依赖
+      run: |
+        cd simple_live_console
+        dart pub get
+
+    - name: 构建控制台应用
+      run: |
+        cd simple_live_console
+        dart compile exe bin/simple_live_console.dart -o simple_live_console
+
+    - name: 上传控制台应用
+      uses: actions/upload-artifact@v4
+      with:
+        name: console-app
+        path: simple_live_console/simple_live_console
+
+  # 创建发布
+  create-release:
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: [build-mobile, build-desktop, build-web, build-console]
+    runs-on: ubuntu-latest
+    steps:
+    - name: 下载所有构建产物
+      uses: actions/download-artifact@v4
+
+    - name: 创建发布
+      uses: softprops/action-gh-release@v1
+      with:
+        files: |
+          simple_live_app-apk/app-release.apk
+          simple_live_app-aab/app-release.aab
+          simple_live_tv_app-apk/app-release.apk
+          simple_live_tv_app-aab/app-release.aab
+          windows-app/SimpleLiveApp-Windows.zip
+          linux-app/SimpleLiveApp-Linux.tar.gz
+          macos-app/SimpleLiveApp-macOS.zip
+          web-app/SimpleLiveApp-Web.zip
+          console-app/simple_live_console
+        draft: false
+        prerelease: false
+        generate_release_notes: true
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
