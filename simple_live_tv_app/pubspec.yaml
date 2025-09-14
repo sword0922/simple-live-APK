@@ -30,7 +30,7 @@ dependencies:
   flutter_easyrefresh: 2.2.2 #下拉刷新、上拉加载
   extended_image: ^9.1.0 #拓展Image,支持缓存
   flutter_smart_dialog: 4.9.6 #各种弹窗 Toast/Dialog/Popup
-  marquee: ^2.2.3 #跑马灯
+  marquee: ^2.3.0 #跑马灯
   lottie: ^3.1.0 #Lottie动画
   qr_flutter: ^4.1.0 #二维码
   sticky_headers: ^0.3.0+2 #吸顶
