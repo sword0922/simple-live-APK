@@ -50,7 +50,7 @@ jobs:
             condition: ${{ github.event.inputs.app_type == 'both' || github.event.inputs.app_type == 'tv' }}
     steps:
     - name: 检出代码
-      uses: actions/checkout@v4
+      uses: actions/checkout@v5
 
     - name: 设置Flutter
       uses: subosito/flutter-action@v2
