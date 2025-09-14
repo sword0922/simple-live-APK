@@ -1,0 +1,128 @@
+name: Build Windows MSI
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build-windows-msi:
+    runs-on: windows-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Flutter
+      uses: subosito/flutter-action@v2
+      with:
+        flutter-version: '3.24.5'
+        channel: 'stable'
+        cache: true
+
+    - name: Install dependencies
+      run: |
+        cd simple_live_app
+        flutter pub get
+
+    - name: Build Windows app
+      run: |
+        cd simple_live_app
+        flutter build windows --release
+
+    - name: Setup WiX Toolset
+      uses: wix/setup-wix@v1
+      with:
+        version: '3.11.2'
+
+    - name: Create MSI installer
+      run: |
+        # 创建WiX配置文件
+        $wxsContent = @"
+        <?xml version="1.0" encoding="UTF-8"?>
+        <Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
+          <Product Id="*" 
+                   Name="Simple Live App" 
+                   Language="1033" 
+                   Version="1.9.3.0" 
+                   Manufacturer="Simple Live Team" 
+                   UpgradeCode="PUT-GUID-HERE">
+            <Package InstallerVersion="200" 
+                     Compressed="yes" 
+                     InstallScope="perMachine" 
+                     Description="聚合直播应用" 
+                     Comments="Simple Live App Installer" />
+            
+            <MajorUpgrade DowngradeErrorMessage="A newer version of [ProductName] is already installed." />
+            <MediaTemplate />
+            
+            <Feature Id="ProductFeature" Title="Simple Live App" Level="1">
+              <ComponentGroupRef Id="ProductComponents" />
+            </Feature>
+            
+            <Directory Id="TARGETDIR" Name="SourceDir">
+              <Directory Id="ProgramFilesFolder">
+                <Directory Id="INSTALLFOLDER" Name="SimpleLiveApp" />
+              </Directory>
+              <Directory Id="ProgramMenuFolder">
+                <Directory Id="ProgramMenuDir" Name="Simple Live App">
+                  <Component Id="ApplicationShortcut" Guid="*">
+                    <Shortcut Id="ApplicationStartMenuShortcut"
+                              Name="Simple Live App"
+                              Description="聚合直播应用"
+                              Target="[#simple_live_app.exe]"
+                              WorkingDirectory="INSTALLFOLDER"/>
+                    <RemoveFolder Id="ProgramMenuDir" On="uninstall"/>
+                    <RegistryValue Root="HKCU" Key="Software\SimpleLiveApp" Name="installed" Type="integer" Value="1" KeyPath="yes"/>
+                  </Component>
+                </Directory>
+              </Directory>
+            </Directory>
+            
+            <ComponentGroup Id="ProductComponents" Directory="INSTALLFOLDER">
+              <Component Id="MainExecutable" Guid="*">
+                <File Id="simple_live_app.exe" 
+                      Source="simple_live_app\build\windows\x64\runner\Release\simple_live_app.exe" 
+                      KeyPath="yes"/>
+              </Component>
+              <Component Id="FlutterDLL" Guid="*">
+                <File Source="simple_live_app\build\windows\x64\runner\Release\flutter_windows.dll"/>
+              </Component>
+              <Component Id="DataFolder" Guid="*">
+                <File Source="simple_live_app\build\windows\x64\runner\Release\data\*" />
+              </Component>
+              <Component Id="OtherDLLs" Guid="*">
+                <File Source="simple_live_app\build\windows\x64\runner\Release\*.dll" />
+              </Component>
+            </ComponentGroup>
+          </Product>
+        </Wix>
+        "@
+        
+        $wxsContent | Out-File -FilePath "installer.wxs" -Encoding UTF8
+        
+        # 编译WiX文件
+        & "C:\Program Files (x86)\WiX Toolset v3.11\bin\candle.exe" installer.wxs
+        
+        # 链接生成MSI
+        & "C:\Program Files (x86)\WiX Toolset v3.11\bin\light.exe" installer.wixobj -out SimpleLiveApp.msi
+
+    - name: Upload MSI artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: simple-live-app-msi
+        path: SimpleLiveApp.msi
+        retention-days: 30
+
+    - name: Create Release
+      if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
+      uses: softprops/action-gh-release@v1
+      with:
+        files: SimpleLiveApp.msi
+        name: Simple Live App Windows v${{ github.run_number }}
+        tag_name: windows-v${{ github.run_number }}
+        generate_release_notes: true
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

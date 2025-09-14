@@ -1,0 +1,122 @@
+name: Build All Platforms
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build-android:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Java
+      uses: actions/setup-java@v4
+      with:
+        distribution: 'zulu'
+        java-version: '17'
+
+    - name: Setup Flutter
+      uses: subosito/flutter-action@v2
+      with:
+        flutter-version: '3.24.5'
+        channel: 'stable'
+        cache: true
+
+    - name: Install dependencies
+      run: |
+        cd simple_live_app
+        flutter pub get
+
+    - name: Build APK
+      run: |
+        cd simple_live_app
+        flutter build apk --release
+
+    - name: Upload APK
+      uses: actions/upload-artifact@v4
+      with:
+        name: simple-live-app-android
+        path: simple_live_app/build/app/outputs/flutter-apk/app-release.apk
+        retention-days: 30
+
+  build-windows:
+    runs-on: windows-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Flutter
+      uses: subosito/flutter-action@v2
+      with:
+        flutter-version: '3.24.5'
+        channel: 'stable'
+        cache: true
+
+    - name: Install dependencies
+      run: |
+        cd simple_live_app
+        flutter pub get
+
+    - name: Build Windows app
+      run: |
+        cd simple_live_app
+        flutter build windows --release
+
+    - name: Create portable package
+      run: |
+        Compress-Archive -Path "simple_live_app\build\windows\x64\runner\Release" -DestinationPath "SimpleLiveApp-Portable.zip" -Force
+
+    - name: Upload Windows artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: simple-live-app-windows
+        path: |
+          SimpleLiveApp-Portable.zip
+          simple_live_app/build/windows/x64/runner/Release/simple_live_app.exe
+        retention-days: 30
+
+  create-release:
+    needs: [build-android, build-windows]
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
+    steps:
+    - name: Download Android APK
+      uses: actions/download-artifact@v4
+      with:
+        name: simple-live-app-android
+        path: ./artifacts/android
+
+    - name: Download Windows artifacts
+      uses: actions/download-artifact@v4
+      with:
+        name: simple-live-app-windows
+        path: ./artifacts/windows
+
+    - name: Create Release
+      uses: softprops/action-gh-release@v1
+      with:
+        files: |
+          ./artifacts/android/app-release.apk
+          ./artifacts/windows/SimpleLiveApp-Portable.zip
+          ./artifacts/windows/simple_live_app.exe
+        name: Simple Live App v${{ github.run_number }}
+        tag_name: v${{ github.run_number }}
+        generate_release_notes: true
+        body: |
+          ## Simple Live App v${{ github.run_number }}
+          
+          ### 下载文件
+          - **Android APK**: `app-release.apk` - Android应用安装包
+          - **Windows便携版**: `SimpleLiveApp-Portable.zip` - Windows便携版压缩包
+          - **Windows可执行文件**: `simple_live_app.exe` - Windows可执行文件
+          
+          ### 安装说明
+          - **Android**: 下载APK文件，在Android设备上安装
+          - **Windows**: 解压便携版或直接运行可执行文件
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
